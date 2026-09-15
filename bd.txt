@@ -1,0 +1,2429 @@
+-- ============================================================
+-- CIVIL CONNECTION
+
+-- ============================================================
+-- EXTENSÕES
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "postgis";
+
+
+-- ============================================================
+-- TIPOS DE USUÁRIO
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_types (
+    id SERIAL PRIMARY KEY,
+    type_name VARCHAR(50) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_user_types_type_name
+ON user_types(type_name);
+
+
+INSERT INTO user_types (type_name, description)
+SELECT v.type_name, v.description
+FROM (
+    VALUES
+        ('admin', 'Administrador do sistema'),
+        ('cliente', 'Cliente que busca profissionais e gerencia projetos'),
+        ('profissional', 'Profissional autônomo da construção civil'),
+        ('empreiteira', 'Empresa de construção e serviços')
+) AS v(type_name, description)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM user_types u
+    WHERE u.type_name = v.type_name
+);
+
+
+-- ============================================================
+-- USUÁRIOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY
+        REFERENCES auth.users(id)
+        ON DELETE CASCADE,
+
+    email VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(20),
+    avatar_url TEXT,
+
+    user_type_id INTEGER
+        REFERENCES user_types(id),
+
+    is_verified BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_users_email
+ON users(email);
+
+CREATE INDEX IF NOT EXISTS
+    idx_users_type
+ON users(user_type_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_users_active
+ON users(is_active);
+
+
+-- ============================================================
+-- PERFIS PROFISSIONAIS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS professional_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL UNIQUE
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    professional_type VARCHAR(100) NOT NULL,
+    registration_number VARCHAR(50),
+    registration_state VARCHAR(2),
+
+    bio TEXT,
+    years_experience INTEGER DEFAULT 0,
+    hourly_rate DECIMAL(10,2),
+
+    is_available BOOLEAN DEFAULT TRUE,
+
+    average_rating DECIMAL(2,1) DEFAULT 0
+        CHECK (
+            average_rating >= 0
+            AND average_rating <= 5
+        ),
+
+    total_reviews INTEGER DEFAULT 0,
+
+    location_lat DECIMAL(10,8),
+    location_lng DECIMAL(11,8),
+
+    address_street VARCHAR(255),
+    address_number VARCHAR(20),
+    address_complement VARCHAR(100),
+    address_city VARCHAR(100),
+    address_state VARCHAR(2),
+    address_zip VARCHAR(10),
+
+    service_radius_km INTEGER DEFAULT 50,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_type
+ON professional_profiles(professional_type);
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_available
+ON professional_profiles(is_available);
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_location
+ON professional_profiles(location_lat, location_lng);
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_rating
+ON professional_profiles(average_rating DESC);
+
+
+-- ============================================================
+-- ESPECIALIDADES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS specialties (
+    id SERIAL PRIMARY KEY,
+
+    specialty_name VARCHAR(100) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+
+    description TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_specialties_specialty_name
+ON specialties(specialty_name);
+
+
+INSERT INTO specialties
+    (specialty_name, category, description)
+SELECT v.specialty_name, v.category, v.description
+FROM (
+    VALUES
+        (
+            'Estruturas de Concreto',
+            'estrutural',
+            'Trabalhos com concreto armado e estruturas'
+        ),
+        (
+            'Alvenaria',
+            'estrutural',
+            'Construção de paredes e divisórias'
+        ),
+        (
+            'Hidráulica',
+            'hidraulico',
+            'Instalações de água e esgoto'
+        ),
+        (
+            'Elétrica',
+            'eletrico',
+            'Instalações elétricas residenciais e comerciais'
+        ),
+        (
+            'Pintura',
+            'acabamento',
+            'Pintura interna e externa'
+        ),
+        (
+            'Revestimentos',
+            'acabamento',
+            'Aplicação de revestimentos diversos'
+        ),
+        (
+            'Serralheria',
+            'metal',
+            'Trabalhos com metal e estruturas metálicas'
+        ),
+        (
+            'Marcenaria',
+            'madeira',
+            'Móveis e acabamentos em madeira'
+        ),
+        (
+            'Ar Condicionado',
+            'climatizacao',
+            'Instalação e manutenção de ar condicionado'
+        ),
+        (
+            'Impermeabilização',
+            'impermeabilizacao',
+            'Tratamento contra infiltrações'
+        ),
+        (
+            'Piso e Revestimento',
+            'piso',
+            'Instalação de pisos diversos'
+        ),
+        (
+            'Drywall',
+            'acabamento',
+            'Divisórias e forros em drywall'
+        ),
+        (
+            'Telhados e Coberturas',
+            'cobertura',
+            'Instalação e manutenção de telhados'
+        ),
+        (
+            'Jardinagem e Paisagismo',
+            'externo',
+            'Projetos de jardins e áreas verdes'
+        ),
+        (
+            'Demolição',
+            'demolicao',
+            'Serviços de demolição controlada'
+        )
+) AS v(specialty_name, category, description)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM specialties s
+    WHERE s.specialty_name = v.specialty_name
+);
+
+
+-- ============================================================
+-- RELAÇÃO PROFISSIONAL / ESPECIALIDADE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS professional_specialties (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    professional_id UUID NOT NULL
+        REFERENCES professional_profiles(id)
+        ON DELETE CASCADE,
+
+    specialty_id INTEGER NOT NULL
+        REFERENCES specialties(id)
+        ON DELETE CASCADE,
+
+    certification_url TEXT,
+    years_experience INTEGER DEFAULT 0,
+    is_primary BOOLEAN DEFAULT FALSE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_professional_specialties
+ON professional_specialties(
+    professional_id,
+    specialty_id
+);
+
+
+-- ============================================================
+-- PERFIS DE EMPREITEIRAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS contractor_profiles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL UNIQUE
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    company_name VARCHAR(255) NOT NULL,
+    trading_name VARCHAR(255),
+
+    cnpj VARCHAR(18),
+
+    company_size VARCHAR(20),
+    description TEXT,
+    website VARCHAR(255),
+
+    average_rating DECIMAL(2,1) DEFAULT 0
+        CHECK (
+            average_rating >= 0
+            AND average_rating <= 5
+        ),
+
+    total_projects INTEGER DEFAULT 0,
+    total_reviews INTEGER DEFAULT 0,
+
+    location_lat DECIMAL(10,8),
+    location_lng DECIMAL(11,8),
+
+    address_street VARCHAR(255),
+    address_number VARCHAR(20),
+    address_complement VARCHAR(100),
+    address_city VARCHAR(100),
+    address_state VARCHAR(2),
+    address_zip VARCHAR(10),
+
+    service_radius_km INTEGER DEFAULT 100,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_contractor_profiles_cnpj
+ON contractor_profiles(cnpj)
+WHERE cnpj IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS
+    idx_contractor_location
+ON contractor_profiles(location_lat, location_lng);
+
+CREATE INDEX IF NOT EXISTS
+    idx_contractor_rating
+ON contractor_profiles(average_rating DESC);
+
+
+-- ============================================================
+-- CERTIFICAÇÕES DE EMPREITEIRAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS contractor_certifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    contractor_id UUID NOT NULL
+        REFERENCES contractor_profiles(id)
+        ON DELETE CASCADE,
+
+    certification_name VARCHAR(255) NOT NULL,
+    certification_number VARCHAR(100),
+    issuing_body VARCHAR(255),
+
+    issue_date DATE,
+    expiration_date DATE,
+
+    document_url TEXT,
+
+    is_active BOOLEAN DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ============================================================
+-- PORTFÓLIO
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS contractor_portfolio (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    contractor_id UUID NOT NULL
+        REFERENCES contractor_profiles(id)
+        ON DELETE CASCADE,
+
+    project_title VARCHAR(255) NOT NULL,
+    project_description TEXT,
+
+    project_value DECIMAL(15,2),
+    completion_date DATE,
+
+    location_city VARCHAR(100),
+    location_state VARCHAR(2),
+
+    project_area_sqm DECIMAL(10,2),
+
+    images TEXT[],
+
+    is_featured BOOLEAN DEFAULT FALSE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ============================================================
+-- CATEGORIAS DE PROJETOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS project_categories (
+    id SERIAL PRIMARY KEY,
+
+    category_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon_url TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_project_categories_category_name
+ON project_categories(category_name);
+
+
+INSERT INTO project_categories
+    (category_name, description)
+SELECT v.category_name, v.description
+FROM (
+    VALUES
+        (
+            'Residencial',
+            'Projetos de construção e reforma residencial'
+        ),
+        (
+            'Comercial',
+            'Lojas, escritórios e espaços comerciais'
+        ),
+        (
+            'Industrial',
+            'Galpões, fábricas e instalações industriais'
+        ),
+        (
+            'Institucional',
+            'Escolas, hospitais e órgãos públicos'
+        ),
+        (
+            'Infraestrutura',
+            'Obras de infraestrutura urbana'
+        ),
+        (
+            'Paisagismo',
+            'Projetos de áreas verdes e jardins'
+        ),
+        (
+            'Restauração',
+            'Restauração e preservação de imóveis'
+        ),
+        (
+            'Ampliacao',
+            'Ampliação e adição de espaços'
+        )
+) AS v(category_name, description)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM project_categories pc
+    WHERE pc.category_name = v.category_name
+);
+
+
+-- ============================================================
+-- STATUS DE PROJETOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS project_status (
+    id SERIAL PRIMARY KEY,
+
+    status_name VARCHAR(50) NOT NULL,
+    description TEXT,
+
+    color_code VARCHAR(7),
+    order_index INTEGER DEFAULT 0,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_project_status_status_name
+ON project_status(status_name);
+
+
+INSERT INTO project_status
+    (status_name, description, color_code, order_index)
+SELECT
+    v.status_name,
+    v.description,
+    v.color_code,
+    v.order_index
+FROM (
+    VALUES
+        (
+            'rascunho',
+            'Projeto em rascunho, não publicado',
+            '#9CA3AF',
+            1
+        ),
+        (
+            'publicado',
+            'Publicado, aguardando propostas',
+            '#3B82F6',
+            2
+        ),
+        (
+            'em_analise',
+            'Propostas em análise',
+            '#F59E0B',
+            3
+        ),
+        (
+            'em_andamento',
+            'Obra em execução',
+            '#10B981',
+            4
+        ),
+        (
+            'pausado',
+            'Obra temporariamente pausada',
+            '#EF4444',
+            5
+        ),
+        (
+            'concluido',
+            'Obra finalizada',
+            '#059669',
+            6
+        ),
+        (
+            'cancelado',
+            'Projeto cancelado',
+            '#6B7280',
+            7
+        )
+) AS v(
+    status_name,
+    description,
+    color_code,
+    order_index
+)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM project_status ps
+    WHERE ps.status_name = v.status_name
+);
+
+
+-- ============================================================
+-- PROJETOS / OBRAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    client_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+
+    category_id INTEGER
+        REFERENCES project_categories(id),
+
+    status_id INTEGER
+        REFERENCES project_status(id)
+        DEFAULT 1,
+
+    location_lat DECIMAL(10,8),
+    location_lng DECIMAL(11,8),
+
+    address_street VARCHAR(255),
+    address_number VARCHAR(20),
+    address_complement VARCHAR(100),
+    address_neighborhood VARCHAR(100),
+
+    address_city VARCHAR(100) NOT NULL,
+    address_state VARCHAR(2) NOT NULL,
+    address_zip VARCHAR(10),
+
+    project_type VARCHAR(50),
+
+    estimated_budget_min DECIMAL(15,2),
+    estimated_budget_max DECIMAL(15,2),
+
+    estimated_area_sqm DECIMAL(10,2),
+    estimated_duration_days INTEGER,
+
+    urgency_level VARCHAR(20) DEFAULT 'normal',
+
+    requires_certification BOOLEAN DEFAULT FALSE,
+
+    required_specialties INTEGER[],
+
+    images TEXT[],
+    documents TEXT[],
+
+    is_public BOOLEAN DEFAULT TRUE,
+
+    allows_professionals BOOLEAN DEFAULT TRUE,
+    allows_contractors BOOLEAN DEFAULT TRUE,
+
+    view_count INTEGER DEFAULT 0,
+    proposal_count INTEGER DEFAULT 0,
+
+    hired_professional_id UUID
+        REFERENCES professional_profiles(id),
+
+    hired_contractor_id UUID
+        REFERENCES contractor_profiles(id),
+
+    hire_date TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+    published_at TIMESTAMPTZ,
+
+    expected_start_date DATE,
+    expected_completion_date DATE,
+    actual_completion_date DATE
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_projects_client
+ON projects(client_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_projects_category
+ON projects(category_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_projects_status
+ON projects(status_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_projects_location
+ON projects(location_lat, location_lng);
+
+CREATE INDEX IF NOT EXISTS
+    idx_projects_public
+ON projects(is_public, status_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_projects_created
+ON projects(created_at DESC);
+
+
+-- ============================================================
+-- STATUS DE PROPOSTAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS proposal_status (
+    id SERIAL PRIMARY KEY,
+
+    status_name VARCHAR(50) NOT NULL,
+    description TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_proposal_status_status_name
+ON proposal_status(status_name);
+
+
+INSERT INTO proposal_status
+    (status_name, description)
+SELECT v.status_name, v.description
+FROM (
+    VALUES
+        (
+            'enviada',
+            'Proposta enviada, aguardando análise'
+        ),
+        (
+            'em_analise',
+            'Proposta sendo analisada pelo cliente'
+        ),
+        (
+            'negociacao',
+            'Em processo de negociação'
+        ),
+        (
+            'aceita',
+            'Proposta aceita pelo cliente'
+        ),
+        (
+            'rejeitada',
+            'Proposta rejeitada'
+        ),
+        (
+            'cancelada',
+            'Proposta cancelada pelo profissional'
+        ),
+        (
+            'expirada',
+            'Proposta expirada'
+        )
+) AS v(status_name, description)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM proposal_status ps
+    WHERE ps.status_name = v.status_name
+);
+
+
+-- ============================================================
+-- PROPOSTAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS proposals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    project_id UUID NOT NULL
+        REFERENCES projects(id)
+        ON DELETE CASCADE,
+
+    sender_type VARCHAR(20) NOT NULL
+        CHECK (
+            sender_type IN (
+                'professional',
+                'contractor'
+            )
+        ),
+
+    professional_id UUID
+        REFERENCES professional_profiles(id),
+
+    contractor_id UUID
+        REFERENCES contractor_profiles(id),
+
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+
+    proposed_value DECIMAL(15,2) NOT NULL,
+    proposed_duration_days INTEGER,
+
+    scope_description TEXT,
+
+    materials_included BOOLEAN DEFAULT FALSE,
+    materials_value DECIMAL(15,2),
+    labor_value DECIMAL(15,2),
+
+    payment_terms TEXT,
+
+    warranty_months INTEGER DEFAULT 0,
+
+    start_date_availability DATE,
+
+    status_id INTEGER
+        REFERENCES proposal_status(id)
+        DEFAULT 1,
+
+    sent_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,
+
+    responded_at TIMESTAMPTZ,
+    response_message TEXT,
+
+    revision_count INTEGER DEFAULT 0,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+    CONSTRAINT chk_proposal_sender
+    CHECK (
+        (
+            sender_type = 'professional'
+            AND professional_id IS NOT NULL
+            AND contractor_id IS NULL
+        )
+        OR
+        (
+            sender_type = 'contractor'
+            AND contractor_id IS NOT NULL
+            AND professional_id IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_proposals_project
+ON proposals(project_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_proposals_status
+ON proposals(status_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_proposals_professional
+ON proposals(professional_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_proposals_contractor
+ON proposals(contractor_id);
+
+
+-- ============================================================
+-- MENSAGENS DE PROPOSTAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS proposal_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    proposal_id UUID NOT NULL
+        REFERENCES proposals(id)
+        ON DELETE CASCADE,
+
+    sender_id UUID NOT NULL
+        REFERENCES users(id),
+
+    message TEXT NOT NULL,
+
+    attachments TEXT[],
+
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ============================================================
+-- REVISÕES DE PROPOSTAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS proposal_revisions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    proposal_id UUID NOT NULL
+        REFERENCES proposals(id)
+        ON DELETE CASCADE,
+
+    previous_value DECIMAL(15,2),
+    new_value DECIMAL(15,2),
+
+    previous_duration INTEGER,
+    new_duration INTEGER,
+
+    change_reason TEXT,
+
+    revised_by UUID
+        REFERENCES users(id),
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ============================================================
+-- ETAPAS DE PROJETO
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS project_stages (
+    id SERIAL PRIMARY KEY,
+
+    stage_name VARCHAR(100) NOT NULL,
+    category VARCHAR(50),
+
+    description TEXT,
+
+    default_order INTEGER,
+
+    estimated_duration_days INTEGER,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_project_stages_stage_name
+ON project_stages(stage_name);
+
+
+INSERT INTO project_stages
+    (
+        stage_name,
+        category,
+        default_order,
+        estimated_duration_days
+    )
+SELECT
+    v.stage_name,
+    v.category,
+    v.default_order,
+    v.estimated_duration_days
+FROM (
+    VALUES
+        ('Planejamento', 'inicial', 1, 7),
+        ('Aprovação de Projeto', 'inicial', 2, 14),
+        ('Demolição/Limpeza', 'preparacao', 3, 5),
+        ('Fundação', 'estrutura', 4, 14),
+        ('Estrutura', 'estrutura', 5, 21),
+        ('Alvenaria', 'estrutura', 6, 14),
+        ('Instalações Hidráulicas', 'instalacoes', 7, 10),
+        ('Instalações Elétricas', 'instalacoes', 8, 10),
+        ('Reboco e Chapisco', 'acabamento', 9, 10),
+        ('Piso e Revestimento', 'acabamento', 10, 14),
+        ('Pintura', 'acabamento', 11, 10),
+        ('Acabamentos Finais', 'acabamento', 12, 14),
+        ('Limpeza Final', 'finalizacao', 13, 3),
+        ('Vistoria e Entrega', 'finalizacao', 14, 7)
+) AS v(
+    stage_name,
+    category,
+    default_order,
+    estimated_duration_days
+)
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM project_stages ps
+    WHERE ps.stage_name = v.stage_name
+);
+
+
+-- ============================================================
+-- PROGRESSO
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS project_progress (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    project_id UUID NOT NULL
+        REFERENCES projects(id)
+        ON DELETE CASCADE,
+
+    stage_id INTEGER
+        REFERENCES project_stages(id),
+
+    status VARCHAR(20) DEFAULT 'pendente'
+        CHECK (
+            status IN (
+                'pendente',
+                'em_andamento',
+                'concluido',
+                'atrasado'
+            )
+        ),
+
+    progress_percentage INTEGER DEFAULT 0
+        CHECK (
+            progress_percentage >= 0
+            AND progress_percentage <= 100
+        ),
+
+    planned_start_date DATE,
+    planned_end_date DATE,
+
+    actual_start_date DATE,
+    actual_end_date DATE,
+
+    responsible_professional_id UUID
+        REFERENCES professional_profiles(id),
+
+    responsible_contractor_id UUID
+        REFERENCES contractor_profiles(id),
+
+    description TEXT,
+    notes TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+    updated_by UUID
+        REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_project_progress_project
+ON project_progress(project_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_project_progress_stage
+ON project_progress(stage_id);
+
+
+-- ============================================================
+-- ATIVIDADES / DIÁRIO DE OBRA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS project_activities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    project_id UUID NOT NULL
+        REFERENCES projects(id)
+        ON DELETE CASCADE,
+
+    progress_id UUID
+        REFERENCES project_progress(id),
+
+    registered_by UUID NOT NULL
+        REFERENCES users(id),
+
+    activity_date DATE NOT NULL,
+
+    activity_type VARCHAR(50),
+
+    description TEXT NOT NULL,
+
+    hours_worked DECIMAL(5,2),
+    workers_count INTEGER,
+
+    materials_used TEXT,
+    expenses DECIMAL(12,2),
+
+    photos TEXT[],
+    documents TEXT[],
+
+    location_lat DECIMAL(10,8),
+    location_lng DECIMAL(11,8),
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_project_activities_project
+ON project_activities(project_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_project_activities_date
+ON project_activities(activity_date);
+
+
+-- ============================================================
+-- AVALIAÇÕES DE PROFISSIONAIS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS professional_reviews (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    project_id UUID
+        REFERENCES projects(id),
+
+    reviewer_id UUID NOT NULL
+        REFERENCES users(id),
+
+    professional_id UUID NOT NULL
+        REFERENCES professional_profiles(id),
+
+    rating INTEGER NOT NULL
+        CHECK (
+            rating >= 1
+            AND rating <= 5
+        ),
+
+    punctuality_rating INTEGER
+        CHECK (
+            punctuality_rating >= 1
+            AND punctuality_rating <= 5
+        ),
+
+    quality_rating INTEGER
+        CHECK (
+            quality_rating >= 1
+            AND quality_rating <= 5
+        ),
+
+    communication_rating INTEGER
+        CHECK (
+            communication_rating >= 1
+            AND communication_rating <= 5
+        ),
+
+    price_fairness_rating INTEGER
+        CHECK (
+            price_fairness_rating >= 1
+            AND price_fairness_rating <= 5
+        ),
+
+    title VARCHAR(255),
+    comment TEXT,
+
+    response TEXT,
+    responded_at TIMESTAMPTZ,
+
+    is_approved BOOLEAN DEFAULT TRUE,
+    is_featured BOOLEAN DEFAULT FALSE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_professional_reviews_unique
+ON professional_reviews(
+    project_id,
+    reviewer_id,
+    professional_id
+);
+
+
+-- ============================================================
+-- AVALIAÇÕES DE EMPREITEIRAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS contractor_reviews (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    project_id UUID
+        REFERENCES projects(id),
+
+    reviewer_id UUID NOT NULL
+        REFERENCES users(id),
+
+    contractor_id UUID NOT NULL
+        REFERENCES contractor_profiles(id),
+
+    rating INTEGER NOT NULL
+        CHECK (
+            rating >= 1
+            AND rating <= 5
+        ),
+
+    punctuality_rating INTEGER
+        CHECK (
+            punctuality_rating >= 1
+            AND punctuality_rating <= 5
+        ),
+
+    quality_rating INTEGER
+        CHECK (
+            quality_rating >= 1
+            AND quality_rating <= 5
+        ),
+
+    communication_rating INTEGER
+        CHECK (
+            communication_rating >= 1
+            AND communication_rating <= 5
+        ),
+
+    deadline_rating INTEGER
+        CHECK (
+            deadline_rating >= 1
+            AND deadline_rating <= 5
+        ),
+
+    title VARCHAR(255),
+    comment TEXT,
+
+    response TEXT,
+    responded_at TIMESTAMPTZ,
+
+    is_approved BOOLEAN DEFAULT TRUE,
+    is_featured BOOLEAN DEFAULT FALSE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_contractor_reviews_unique
+ON contractor_reviews(
+    project_id,
+    reviewer_id,
+    contractor_id
+);
+
+
+-- ============================================================
+-- FAVORITOS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS favorite_professionals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    professional_id UUID NOT NULL
+        REFERENCES professional_profiles(id)
+        ON DELETE CASCADE,
+
+    notes TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_favorite_professionals_unique
+ON favorite_professionals(user_id, professional_id);
+
+
+CREATE TABLE IF NOT EXISTS favorite_contractors (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    contractor_id UUID NOT NULL
+        REFERENCES contractor_profiles(id)
+        ON DELETE CASCADE,
+
+    notes TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_favorite_contractors_unique
+ON favorite_contractors(user_id, contractor_id);
+
+
+CREATE TABLE IF NOT EXISTS saved_projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    project_id UUID NOT NULL
+        REFERENCES projects(id)
+        ON DELETE CASCADE,
+
+    notes TEXT,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_saved_projects_unique
+ON saved_projects(user_id, project_id);
+
+
+-- ============================================================
+-- CONVERSAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    project_id UUID
+        REFERENCES projects(id),
+
+    participant_1_id UUID NOT NULL
+        REFERENCES users(id),
+
+    participant_2_id UUID NOT NULL
+        REFERENCES users(id),
+
+    last_message_at TIMESTAMPTZ,
+    last_message_preview TEXT,
+
+    participant_1_unread INTEGER DEFAULT 0,
+    participant_2_unread INTEGER DEFAULT 0,
+
+    is_active BOOLEAN DEFAULT TRUE,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_conversations_unique
+ON conversations(
+    project_id,
+    participant_1_id,
+    participant_2_id
+);
+
+
+-- ============================================================
+-- MENSAGENS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    conversation_id UUID NOT NULL
+        REFERENCES conversations(id)
+        ON DELETE CASCADE,
+
+    sender_id UUID NOT NULL
+        REFERENCES users(id),
+
+    content TEXT NOT NULL,
+
+    message_type VARCHAR(20) DEFAULT 'text'
+        CHECK (
+            message_type IN (
+                'text',
+                'image',
+                'file',
+                'location',
+                'system'
+            )
+        ),
+
+    attachments TEXT[],
+
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_messages_conversation
+ON messages(conversation_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_messages_sender
+ON messages(sender_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_messages_created
+ON messages(created_at);
+
+
+-- ============================================================
+-- NOTIFICAÇÕES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    user_id UUID NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+
+    notification_type VARCHAR(50) NOT NULL,
+
+    action_url TEXT,
+
+    related_entity_type VARCHAR(50),
+    related_entity_id UUID,
+
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+
+    sent_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS
+    idx_notifications_user
+ON notifications(user_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_notifications_unread
+ON notifications(user_id, is_read);
+
+
+-- ============================================================
+-- ESTATÍSTICAS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS system_statistics (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    stat_date DATE NOT NULL DEFAULT CURRENT_DATE,
+
+    total_users INTEGER DEFAULT 0,
+    new_users_today INTEGER DEFAULT 0,
+
+    active_professionals INTEGER DEFAULT 0,
+    active_contractors INTEGER DEFAULT 0,
+
+    total_projects INTEGER DEFAULT 0,
+    projects_published_today INTEGER DEFAULT 0,
+
+    projects_in_progress INTEGER DEFAULT 0,
+    projects_completed INTEGER DEFAULT 0,
+
+    total_proposals INTEGER DEFAULT 0,
+    proposals_today INTEGER DEFAULT 0,
+    proposals_accepted INTEGER DEFAULT 0,
+
+    conversion_rate DECIMAL(5,2),
+
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS
+    ux_system_statistics_stat_date
+ON system_statistics(stat_date);
+
+
+-- ============================================================
+-- ÍNDICES ADICIONAIS
+-- ============================================================
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_specialties_professional
+ON professional_specialties(professional_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_specialties_specialty
+ON professional_specialties(specialty_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_contractor_certifications_contractor
+ON contractor_certifications(contractor_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_contractor_portfolio_contractor
+ON contractor_portfolio(contractor_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_proposal_messages_proposal
+ON proposal_messages(proposal_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_proposal_revisions_proposal
+ON proposal_revisions(proposal_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_professional_reviews_professional
+ON professional_reviews(professional_id);
+
+CREATE INDEX IF NOT EXISTS
+    idx_contractor_reviews_contractor
+ON contractor_reviews(contractor_id);
+
+
+-- ============================================================
+-- FUNÇÃO UPDATED_AT
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
+
+-- ============================================================
+-- TRIGGERS UPDATED_AT
+-- ============================================================
+
+DROP TRIGGER IF EXISTS update_users_updated_at
+ON users;
+
+CREATE TRIGGER update_users_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_professional_profiles_updated_at
+ON professional_profiles;
+
+CREATE TRIGGER update_professional_profiles_updated_at
+BEFORE UPDATE ON professional_profiles
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_contractor_profiles_updated_at
+ON contractor_profiles;
+
+CREATE TRIGGER update_contractor_profiles_updated_at
+BEFORE UPDATE ON contractor_profiles
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_projects_updated_at
+ON projects;
+
+CREATE TRIGGER update_projects_updated_at
+BEFORE UPDATE ON projects
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_proposals_updated_at
+ON proposals;
+
+CREATE TRIGGER update_proposals_updated_at
+BEFORE UPDATE ON proposals
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_project_progress_updated_at
+ON project_progress;
+
+CREATE TRIGGER update_project_progress_updated_at
+BEFORE UPDATE ON project_progress
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_professional_reviews_updated_at
+ON professional_reviews;
+
+CREATE TRIGGER update_professional_reviews_updated_at
+BEFORE UPDATE ON professional_reviews
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+DROP TRIGGER IF EXISTS update_contractor_reviews_updated_at
+ON contractor_reviews;
+
+CREATE TRIGGER update_contractor_reviews_updated_at
+BEFORE UPDATE ON contractor_reviews
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+
+-- ============================================================
+-- RATING PROFISSIONAL
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION update_professional_rating()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_professional UUID;
+BEGIN
+
+    IF TG_OP = 'DELETE' THEN
+
+        target_professional := OLD.professional_id;
+
+        UPDATE professional_profiles
+        SET
+            average_rating = COALESCE(
+                (
+                    SELECT ROUND(AVG(rating)::numeric, 1)
+                    FROM professional_reviews
+                    WHERE professional_id = target_professional
+                      AND is_approved = TRUE
+                ),
+                0
+            ),
+            total_reviews = (
+                SELECT COUNT(*)
+                FROM professional_reviews
+                WHERE professional_id = target_professional
+                  AND is_approved = TRUE
+            )
+        WHERE id = target_professional;
+
+        RETURN OLD;
+
+    ELSIF TG_OP = 'UPDATE' THEN
+
+        IF OLD.professional_id IS DISTINCT FROM NEW.professional_id THEN
+
+            UPDATE professional_profiles
+            SET
+                average_rating = COALESCE(
+                    (
+                        SELECT ROUND(AVG(rating)::numeric, 1)
+                        FROM professional_reviews
+                        WHERE professional_id = OLD.professional_id
+                          AND is_approved = TRUE
+                    ),
+                    0
+                ),
+                total_reviews = (
+                    SELECT COUNT(*)
+                    FROM professional_reviews
+                    WHERE professional_id = OLD.professional_id
+                      AND is_approved = TRUE
+                )
+            WHERE id = OLD.professional_id;
+
+        END IF;
+
+        target_professional := NEW.professional_id;
+
+    ELSE
+
+        target_professional := NEW.professional_id;
+
+    END IF;
+
+
+    UPDATE professional_profiles
+    SET
+        average_rating = COALESCE(
+            (
+                SELECT ROUND(AVG(rating)::numeric, 1)
+                FROM professional_reviews
+                WHERE professional_id = target_professional
+                  AND is_approved = TRUE
+            ),
+            0
+        ),
+        total_reviews = (
+            SELECT COUNT(*)
+            FROM professional_reviews
+            WHERE professional_id = target_professional
+              AND is_approved = TRUE
+        )
+    WHERE id = target_professional;
+
+    RETURN NEW;
+
+END;
+$$;
+
+
+DROP TRIGGER IF EXISTS update_professional_rating_after_change
+ON professional_reviews;
+
+CREATE TRIGGER update_professional_rating_after_change
+AFTER INSERT OR UPDATE OR DELETE
+ON professional_reviews
+FOR EACH ROW
+EXECUTE FUNCTION update_professional_rating();
+
+
+-- ============================================================
+-- RATING EMPREITEIRA
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION update_contractor_rating()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_contractor UUID;
+BEGIN
+
+    IF TG_OP = 'DELETE' THEN
+
+        target_contractor := OLD.contractor_id;
+
+        UPDATE contractor_profiles
+        SET
+            average_rating = COALESCE(
+                (
+                    SELECT ROUND(AVG(rating)::numeric, 1)
+                    FROM contractor_reviews
+                    WHERE contractor_id = target_contractor
+                      AND is_approved = TRUE
+                ),
+                0
+            ),
+            total_reviews = (
+                SELECT COUNT(*)
+                FROM contractor_reviews
+                WHERE contractor_id = target_contractor
+                  AND is_approved = TRUE
+            )
+        WHERE id = target_contractor;
+
+        RETURN OLD;
+
+    ELSIF TG_OP = 'UPDATE' THEN
+
+        IF OLD.contractor_id IS DISTINCT FROM NEW.contractor_id THEN
+
+            UPDATE contractor_profiles
+            SET
+                average_rating = COALESCE(
+                    (
+                        SELECT ROUND(AVG(rating)::numeric, 1)
+                        FROM contractor_reviews
+                        WHERE contractor_id = OLD.contractor_id
+                          AND is_approved = TRUE
+                    ),
+                    0
+                ),
+                total_reviews = (
+                    SELECT COUNT(*)
+                    FROM contractor_reviews
+                    WHERE contractor_id = OLD.contractor_id
+                      AND is_approved = TRUE
+                )
+            WHERE id = OLD.contractor_id;
+
+        END IF;
+
+        target_contractor := NEW.contractor_id;
+
+    ELSE
+
+        target_contractor := NEW.contractor_id;
+
+    END IF;
+
+
+    UPDATE contractor_profiles
+    SET
+        average_rating = COALESCE(
+            (
+                SELECT ROUND(AVG(rating)::numeric, 1)
+                FROM contractor_reviews
+                WHERE contractor_id = target_contractor
+                  AND is_approved = TRUE
+            ),
+            0
+        ),
+        total_reviews = (
+            SELECT COUNT(*)
+            FROM contractor_reviews
+            WHERE contractor_id = target_contractor
+              AND is_approved = TRUE
+        )
+    WHERE id = target_contractor;
+
+    RETURN NEW;
+
+END;
+$$;
+
+
+DROP TRIGGER IF EXISTS update_contractor_rating_after_change
+ON contractor_reviews;
+
+CREATE TRIGGER update_contractor_rating_after_change
+AFTER INSERT OR UPDATE OR DELETE
+ON contractor_reviews
+FOR EACH ROW
+EXECUTE FUNCTION update_contractor_rating();
+
+
+-- ============================================================
+-- RLS
+-- ============================================================
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE professional_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contractor_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE professional_specialties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contractor_certifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contractor_portfolio ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposal_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE proposal_revisions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE professional_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contractor_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE favorite_professionals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE favorite_contractors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saved_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+
+-- ============================================================
+-- POLÍTICAS - USERS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Users can view all profiles"
+ON users;
+
+CREATE POLICY "Users can view all profiles"
+ON users
+FOR SELECT
+USING (TRUE);
+
+
+DROP POLICY IF EXISTS "Users can update own profile"
+ON users;
+
+CREATE POLICY "Users can update own profile"
+ON users
+FOR UPDATE
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+
+
+DROP POLICY IF EXISTS "Users can insert own profile"
+ON users;
+
+CREATE POLICY "Users can insert own profile"
+ON users
+FOR INSERT
+WITH CHECK (auth.uid() = id);
+
+
+-- ============================================================
+-- POLÍTICAS - PROFISSIONAIS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Professional profiles are viewable by all"
+ON professional_profiles;
+
+CREATE POLICY "Professional profiles are viewable by all"
+ON professional_profiles
+FOR SELECT
+USING (TRUE);
+
+
+DROP POLICY IF EXISTS "Users can insert own professional profile"
+ON professional_profiles;
+
+CREATE POLICY "Users can insert own professional profile"
+ON professional_profiles
+FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+
+DROP POLICY IF EXISTS "Users can update own professional profile"
+ON professional_profiles;
+
+CREATE POLICY "Users can update own professional profile"
+ON professional_profiles
+FOR UPDATE
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+
+-- ============================================================
+-- POLÍTICAS - EMPREITEIRAS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Contractor profiles are viewable by all"
+ON contractor_profiles;
+
+CREATE POLICY "Contractor profiles are viewable by all"
+ON contractor_profiles
+FOR SELECT
+USING (TRUE);
+
+
+DROP POLICY IF EXISTS "Users can insert own contractor profile"
+ON contractor_profiles;
+
+CREATE POLICY "Users can insert own contractor profile"
+ON contractor_profiles
+FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+
+DROP POLICY IF EXISTS "Users can update own contractor profile"
+ON contractor_profiles;
+
+CREATE POLICY "Users can update own contractor profile"
+ON contractor_profiles
+FOR UPDATE
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+
+-- ============================================================
+-- POLÍTICAS - PROJETOS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Public projects are viewable by all"
+ON projects;
+
+CREATE POLICY "Public projects are viewable by all"
+ON projects
+FOR SELECT
+USING (
+    is_public = TRUE
+    OR auth.uid() = client_id
+    OR auth.uid() IN (
+        SELECT pp.user_id
+        FROM professional_profiles pp
+        WHERE pp.id = projects.hired_professional_id
+
+        UNION
+
+        SELECT cp.user_id
+        FROM contractor_profiles cp
+        WHERE cp.id = projects.hired_contractor_id
+    )
+);
+
+
+DROP POLICY IF EXISTS "Authenticated users can create own projects"
+ON projects;
+
+CREATE POLICY "Authenticated users can create own projects"
+ON projects
+FOR INSERT
+WITH CHECK (
+    auth.uid() = client_id
+);
+
+
+DROP POLICY IF EXISTS "Clients can update own projects"
+ON projects;
+
+CREATE POLICY "Clients can update own projects"
+ON projects
+FOR UPDATE
+USING (
+    auth.uid() = client_id
+)
+WITH CHECK (
+    auth.uid() = client_id
+);
+
+
+DROP POLICY IF EXISTS "Clients can delete own projects"
+ON projects;
+
+CREATE POLICY "Clients can delete own projects"
+ON projects
+FOR DELETE
+USING (
+    auth.uid() = client_id
+);
+
+
+-- ============================================================
+-- POLÍTICAS - PROPOSTAS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Proposals viewable by involved parties"
+ON proposals;
+
+CREATE POLICY "Proposals viewable by involved parties"
+ON proposals
+FOR SELECT
+USING (
+    auth.uid() IN (
+
+        SELECT p.client_id
+        FROM projects p
+        WHERE p.id = proposals.project_id
+
+        UNION
+
+        SELECT pp.user_id
+        FROM professional_profiles pp
+        WHERE pp.id = proposals.professional_id
+
+        UNION
+
+        SELECT cp.user_id
+        FROM contractor_profiles cp
+        WHERE cp.id = proposals.contractor_id
+    )
+);
+
+
+DROP POLICY IF EXISTS "Professionals and contractors can create proposals"
+ON proposals;
+
+CREATE POLICY "Professionals and contractors can create proposals"
+ON proposals
+FOR INSERT
+WITH CHECK (
+    auth.uid() IN (
+
+        SELECT pp.user_id
+        FROM professional_profiles pp
+        WHERE pp.id = proposals.professional_id
+
+        UNION
+
+        SELECT cp.user_id
+        FROM contractor_profiles cp
+        WHERE cp.id = proposals.contractor_id
+    )
+);
+
+
+-- ============================================================
+-- POLÍTICAS - MENSAGENS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Users can view messages in their conversations"
+ON messages;
+
+CREATE POLICY "Users can view messages in their conversations"
+ON messages
+FOR SELECT
+USING (
+    auth.uid() IN (
+
+        SELECT c.participant_1_id
+        FROM conversations c
+        WHERE c.id = messages.conversation_id
+
+        UNION
+
+        SELECT c.participant_2_id
+        FROM conversations c
+        WHERE c.id = messages.conversation_id
+    )
+);
+
+
+DROP POLICY IF EXISTS "Users can send messages in their conversations"
+ON messages;
+
+CREATE POLICY "Users can send messages in their conversations"
+ON messages
+FOR INSERT
+WITH CHECK (
+    auth.uid() = sender_id
+    AND auth.uid() IN (
+
+        SELECT c.participant_1_id
+        FROM conversations c
+        WHERE c.id = messages.conversation_id
+
+        UNION
+
+        SELECT c.participant_2_id
+        FROM conversations c
+        WHERE c.id = messages.conversation_id
+    )
+);
+
+
+-- ============================================================
+-- POLÍTICAS - NOTIFICAÇÕES
+-- ============================================================
+
+DROP POLICY IF EXISTS "Users can view own notifications"
+ON notifications;
+
+CREATE POLICY "Users can view own notifications"
+ON notifications
+FOR SELECT
+USING (
+    auth.uid() = user_id
+);
+
+
+DROP POLICY IF EXISTS "System can create notifications"
+ON notifications;
+
+CREATE POLICY "System can create notifications"
+ON notifications
+FOR INSERT
+WITH CHECK (TRUE);
+
+
+-- ============================================================
+-- POLÍTICAS - FAVORITOS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Users can manage favorite professionals"
+ON favorite_professionals;
+
+CREATE POLICY "Users can manage favorite professionals"
+ON favorite_professionals
+FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+
+DROP POLICY IF EXISTS "Users can manage favorite contractors"
+ON favorite_contractors;
+
+CREATE POLICY "Users can manage favorite contractors"
+ON favorite_contractors
+FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+
+DROP POLICY IF EXISTS "Users can manage saved projects"
+ON saved_projects;
+
+CREATE POLICY "Users can manage saved projects"
+ON saved_projects
+FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+
+-- ============================================================
+-- POLÍTICAS - CONVERSAS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Users can view their conversations"
+ON conversations;
+
+CREATE POLICY "Users can view their conversations"
+ON conversations
+FOR SELECT
+USING (
+    auth.uid() = participant_1_id
+    OR auth.uid() = participant_2_id
+);
+
+
+DROP POLICY IF EXISTS "Users can create conversations"
+ON conversations;
+
+CREATE POLICY "Users can create conversations"
+ON conversations
+FOR INSERT
+WITH CHECK (
+    auth.uid() = participant_1_id
+    OR auth.uid() = participant_2_id
+);
+
+
+DROP POLICY IF EXISTS "Users can update their conversations"
+ON conversations;
+
+CREATE POLICY "Users can update their conversations"
+ON conversations
+FOR UPDATE
+USING (
+    auth.uid() = participant_1_id
+    OR auth.uid() = participant_2_id
+)
+WITH CHECK (
+    auth.uid() = participant_1_id
+    OR auth.uid() = participant_2_id
+);
+
+
+-- ============================================================
+-- POLÍTICAS - ESPECIALIDADES PROFISSIONAIS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Professional specialties viewable by all"
+ON professional_specialties;
+
+CREATE POLICY "Professional specialties viewable by all"
+ON professional_specialties
+FOR SELECT
+USING (TRUE);
+
+
+DROP POLICY IF EXISTS "Professionals can manage own specialties"
+ON professional_specialties;
+
+CREATE POLICY "Professionals can manage own specialties"
+ON professional_specialties
+FOR ALL
+USING (
+    EXISTS (
+        SELECT 1
+        FROM professional_profiles pp
+        WHERE pp.id = professional_specialties.professional_id
+          AND pp.user_id = auth.uid()
+    )
+)
+WITH CHECK (
+    EXISTS (
+        SELECT 1
+        FROM professional_profiles pp
+        WHERE pp.id = professional_specialties.professional_id
+          AND pp.user_id = auth.uid()
+    )
+);
+
+
+-- ============================================================
+-- POLÍTICAS - PORTFÓLIO
+-- ============================================================
+
+DROP POLICY IF EXISTS "Contractor portfolio viewable by all"
+ON contractor_portfolio;
+
+CREATE POLICY "Contractor portfolio viewable by all"
+ON contractor_portfolio
+FOR SELECT
+USING (TRUE);
+
+
+DROP POLICY IF EXISTS "Contractors can manage own portfolio"
+ON contractor_portfolio;
+
+CREATE POLICY "Contractors can manage own portfolio"
+ON contractor_portfolio
+FOR ALL
+USING (
+    EXISTS (
+        SELECT 1
+        FROM contractor_profiles cp
+        WHERE cp.id = contractor_portfolio.contractor_id
+          AND cp.user_id = auth.uid()
+    )
+)
+WITH CHECK (
+    EXISTS (
+        SELECT 1
+        FROM contractor_profiles cp
+        WHERE cp.id = contractor_portfolio.contractor_id
+          AND cp.user_id = auth.uid()
+    )
+);
+
+
+-- ============================================================
+-- POLÍTICAS - CERTIFICAÇÕES
+-- ============================================================
+
+DROP POLICY IF EXISTS "Contractor certifications viewable by all"
+ON contractor_certifications;
+
+CREATE POLICY "Contractor certifications viewable by all"
+ON contractor_certifications
+FOR SELECT
+USING (TRUE);
+
+
+DROP POLICY IF EXISTS "Contractors can manage own certifications"
+ON contractor_certifications;
+
+CREATE POLICY "Contractors can manage own certifications"
+ON contractor_certifications
+FOR ALL
+USING (
+    EXISTS (
+        SELECT 1
+        FROM contractor_profiles cp
+        WHERE cp.id = contractor_certifications.contractor_id
+          AND cp.user_id = auth.uid()
+    )
+)
+WITH CHECK (
+    EXISTS (
+        SELECT 1
+        FROM contractor_profiles cp
+        WHERE cp.id = contractor_certifications.contractor_id
+          AND cp.user_id = auth.uid()
+    )
+);
+
+
+-- ============================================================
+-- POLÍTICAS - REVIEWS PROFISSIONAIS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Professional reviews are viewable by all"
+ON professional_reviews;
+
+CREATE POLICY "Professional reviews are viewable by all"
+ON professional_reviews
+FOR SELECT
+USING (
+    is_approved = TRUE
+    OR auth.uid() = reviewer_id
+);
+
+
+DROP POLICY IF EXISTS "Users can create professional reviews"
+ON professional_reviews;
+
+CREATE POLICY "Users can create professional reviews"
+ON professional_reviews
+FOR INSERT
+WITH CHECK (
+    auth.uid() = reviewer_id
+);
+
+
+-- ============================================================
+-- POLÍTICAS - REVIEWS EMPREITEIRAS
+-- ============================================================
+
+DROP POLICY IF EXISTS "Contractor reviews are viewable by all"
+ON contractor_reviews;
+
+CREATE POLICY "Contractor reviews are viewable by all"
+ON contractor_reviews
+FOR SELECT
+USING (
+    is_approved = TRUE
+    OR auth.uid() = reviewer_id
+);
+
+
+DROP POLICY IF EXISTS "Users can create contractor reviews"
+ON contractor_reviews;
+
+CREATE POLICY "Users can create contractor reviews"
+ON contractor_reviews
+FOR INSERT
+WITH CHECK (
+    auth.uid() = reviewer_id
+);
+
+
+-- ============================================================
+-- VIEWS
+-- ============================================================
+
+CREATE OR REPLACE VIEW professional_profiles_complete AS
+SELECT
+    pp.*,
+
+    u.full_name,
+    u.email,
+    u.phone,
+    u.avatar_url,
+    u.is_verified,
+
+    COALESCE(
+        ARRAY_AGG(DISTINCT s.specialty_name)
+        FILTER (
+            WHERE s.specialty_name IS NOT NULL
+        ),
+        ARRAY[]::VARCHAR[]
+    ) AS specialties
+
+FROM professional_profiles pp
+
+JOIN users u
+    ON pp.user_id = u.id
+
+LEFT JOIN professional_specialties ps
+    ON pp.id = ps.professional_id
+
+LEFT JOIN specialties s
+    ON ps.specialty_id = s.id
+
+GROUP BY
+    pp.id,
+    u.id;
+
+
+-- ============================================================
+-- VIEW DE PROJETOS
+-- ============================================================
+
+CREATE OR REPLACE VIEW projects_complete AS
+SELECT
+    p.*,
+
+    u.full_name AS client_name,
+    u.avatar_url AS client_avatar,
+
+    pc.category_name,
+
+    ps.status_name,
+    ps.color_code AS status_color
+
+FROM projects p
+
+JOIN users u
+    ON p.client_id = u.id
+
+LEFT JOIN project_categories pc
+    ON p.category_id = pc.id
+
+LEFT JOIN project_status ps
+    ON p.status_id = ps.id;
+
+
+-- ============================================================
+-- VIEW DASHBOARD
+-- ============================================================
+
+CREATE OR REPLACE VIEW dashboard_stats AS
+SELECT
+
+    (
+        SELECT COUNT(*)
+        FROM users
+        WHERE is_active = TRUE
+    ) AS total_users,
+
+    (
+        SELECT COUNT(*)
+        FROM professional_profiles
+        WHERE is_available = TRUE
+    ) AS active_professionals,
+
+    (
+        SELECT COUNT(*)
+        FROM contractor_profiles
+    ) AS total_contractors,
+
+    (
+        SELECT COUNT(*)
+        FROM projects
+        WHERE status_id = (
+            SELECT id
+            FROM project_status
+            WHERE status_name = 'em_andamento'
+            LIMIT 1
+        )
+    ) AS projects_in_progress,
+
+    (
+        SELECT COUNT(*)
+        FROM projects
+        WHERE status_id = (
+            SELECT id
+            FROM project_status
+            WHERE status_name = 'concluido'
+            LIMIT 1
+        )
+    ) AS projects_completed,
+
+    (
+        SELECT COUNT(*)
+        FROM proposals
+        WHERE status_id = (
+            SELECT id
+            FROM proposal_status
+            WHERE status_name = 'aceita'
+            LIMIT 1
+        )
+    ) AS proposals_accepted,
+
+    (
+        SELECT COALESCE(
+            AVG(rating),
+            0
+        )
+        FROM professional_reviews
+        WHERE is_approved = TRUE
+    ) AS avg_professional_rating;
+
+
+-- ============================================================
+-- COMENTÁRIOS
+-- ============================================================
+
+COMMENT ON TABLE users IS
+'Usuários da plataforma Civil Connection vinculados ao Supabase Auth';
+
+COMMENT ON TABLE professional_profiles IS
+'Perfis dos profissionais autônomos da construção civil';
+
+COMMENT ON TABLE contractor_profiles IS
+'Perfis das empreiteiras e empresas de construção';
+
+COMMENT ON TABLE projects IS
+'Obras e projetos publicados pelos clientes';
+
+COMMENT ON TABLE proposals IS
+'Propostas enviadas por profissionais e empreiteiras';
+
+
+-- ============================================================
+-- FIM
+-- ============================================================

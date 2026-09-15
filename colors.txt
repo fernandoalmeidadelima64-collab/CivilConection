@@ -1,0 +1,16 @@
+##  Design System
+
+### Paleta de Cores
+
+```css
+:root {
+  --azul: #17243c;       /* Cor primária - Estrutura e Confiança */
+  --azul-2: #213352;     /* Auxiliar escuro */
+  --laranja: #f18a28;    /* Destaque / Call to Action */
+  --laranja-2: #d96f0d;  /* Destaque secundário */
+  --fundo: #f6f4ef;      /* Background suave */
+  --branco: #ffffff;     /* Superfícies e Cards */
+  --texto: #20252c;      /* Leitura principal */
+  --cinza-4: #717985;    /* Subtítulos e detalhes */
+  --verde: #2d8a60;      /* Indicadores de status positivo */
+}
