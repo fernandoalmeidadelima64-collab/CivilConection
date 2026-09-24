@@ -38,10 +38,7 @@ Thumbs.db
 ehthumbs.db
 [Dd]esktop.ini
 
-# Arquivos de Ambiente & Segredos
-.env
-.env.local
-.env.*.local
+# Arquivos Privados
 *.private
 
 # Crash reports
