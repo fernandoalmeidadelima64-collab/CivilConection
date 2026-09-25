@@ -1,46 +1,7 @@
-# ==============================================================================
-# CIVIL CONNECTION - GITIGNORE PADRONIZADO
-# ==============================================================================
-
-# Gradle
 .gradle/
 build/
-!**/gradle-wrapper.jar
-!**/gradle/wrapper/gradle-wrapper.jar
-
-# Java / Compilação
 bin/
-out/
-target/
-*.class
-*.jar
-!**/gradle-wrapper.jar
-*.war
-*.ear
-
-# Logs
-*.log
-logs/
-
-# IDEs & Editores
-.idea/
-*.iml
-.vscode/
 .settings/
 .classpath
 .project
-*.sublime-project
-*.sublime-workspace
-
-# Sistema Operacional
-.DS_Store
-Thumbs.db
-ehthumbs.db
-[Dd]esktop.ini
-
-# Arquivos Privados
-*.private
-
-# Crash reports
-hs_err_pid*
-replay_pid*
+*.log
