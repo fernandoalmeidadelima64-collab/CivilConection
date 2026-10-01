@@ -66,6 +66,13 @@ CivilConection/
 │   ├── architecture.md            # Arquitetura, fluxo de dados e diagramas (Mermaid)
 │   └── api.md                     # Documentação completa de todos os endpoints REST
 │
+├── SPECs/                         # Estrutura de backlog, specs e documentação de produto
+│   ├── README.md                  # Visão geral da organização
+│   ├── backlog.md                 # Backlog do produto e prioridades
+│   ├── specs/                     # Especificações, tema visual e telas
+│   ├── tasks/                     # Roadmap e tarefas por sprint
+│   └── sql/                       # Schema e seed SQL do sistema
+│
 ├── design/                        # Identidade Visual e Protótipos
 │   ├── tokens/DESIGN.md           # Tokens de Design System (cores, fontes Sora/Inter)
 │   ├── branding/logo.png          # Logotipo original da marca
